@@ -6,6 +6,7 @@ use clap::{Args, Parser, Subcommand};
     about = "CLI + TUI task and note manager",
     long_about = None,
     disable_help_subcommand = true,
+    version,
 )]
 pub struct Cli {
     #[command(subcommand)]

@@ -1,13 +1,49 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
+  bump:
+    name: Bump version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.cz.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.ACCESS_TOKEN }}
+          ref: main
+
+      - name: Config Git User
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Create bump and changelog
+        id: cz
+        run: |
+          python -m pip install -U commitizen
+          cz bump --yes
+          echo "version=v$(cz version --project)" >> "$GITHUB_OUTPUT"
+
+      - name: Push changes and tags
+        run: |
+          git push origin main
+          git push origin --tags
+
   build:
     name: Build ${{ matrix.artifact }}
+    needs: bump
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -24,6 +60,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.version }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -32,25 +70,42 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Package binary
+      - name: Rename binary
         run: cp target/${{ matrix.target }}/release/tasknote ${{ matrix.artifact }}
 
-      - name: Upload to release
-        uses: softprops/action-gh-release@v2
+      - uses: actions/upload-artifact@v4
         with:
-          files: ${{ matrix.artifact }}
-          generate_release_notes: true
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
 
-  publish-crates:
-    name: Publish to crates.io
-    needs: build
+  release:
+    name: Release
+    needs: [bump, build]
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.version }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Publish
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+        run: |
+          gh release create ${{ needs.bump.outputs.version }} \
+            tn-macos-arm64 tn-macos-x86_64 tn-linux-x86_64 \
+            --title ${{ needs.bump.outputs.version }} \
+            --verify-tag \
+            --latest \
+            --notes-from-tag
+
+      - name: Publish to crates.io
         run: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
