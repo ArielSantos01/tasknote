@@ -1,0 +1,17 @@
+# Build output
+/target/
+
+# Editor and IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# macOS
+.DS_Store
+
+# Environment
+.env
